@@ -16,9 +16,7 @@ PIND5: Reset Enable/Disable
 
 #include <Wire.h>
 #include "EEPROM.h"
-
 #include "globals.h"
-
 #include "Image.h"
 
 
@@ -53,7 +51,11 @@ void setup()
 	povData = &povA;
 	setInterrupts();
 
-	Serial.begin(SERIAL_BAUD);
+	//EEPROM.write(0, 0);
+
+	CheckEEPROM();
+
+	//Serial.begin(SERIAL_BAUD);
 }
 
 /*
@@ -113,6 +115,13 @@ inline void setInterrupts()
 	sei();
 }
 
+inline void endSerialMode()
+{
+	Serial.end();
+	setResetDisable(false);
+	curState = STATE_NONE;
+}
+
 //Timer2 interrupt for handling button presses
 ISR(TIMER2_COMPA_vect)
 {
@@ -126,17 +135,22 @@ ISR(TIMER2_COMPA_vect)
 			bCount = 0;
 			if(bSave & ~BUTTON_A)
 			{
-
+				if(curState == STATE_SERIAL_DATA)
+				{
+					endSerialMode();
+				}
 			}
 			else if(bSave & ~BUTTON_B)
 			{
-
+				if(curState == STATE_SERIAL_DATA)
+				{
+					endSerialMode();
+				}
 			}
 			else
 			{
 				if(curState == STATE_NONE)
 				{
-					Serial.println("Enter Serial!!");
 					setResetDisable(true);
 					Serial.begin(SERIAL_BAUD);
 					_serialScan = 16; //start in middle
@@ -146,9 +160,7 @@ ISR(TIMER2_COMPA_vect)
 				}
 				else if(curState == STATE_SERIAL_DATA)
 				{
-					Serial.end();
-					setResetDisable(false);
-					curState = STATE_NONE;
+					endSerialMode();
 				}
 			}
 		} 
@@ -158,6 +170,7 @@ ISR(TIMER2_COMPA_vect)
 }
 
 //Button external interrupts
+//Not really using these for EpochPOV, just here in case we need them later.
 ISR(INT0_vect) {
 
 	uint8_t state = BUTTON_STATE;
@@ -172,11 +185,11 @@ ISR(INT0_vect) {
 		{
 			if(bSave & ~BUTTON_A)
 			{
-				Serial.println("Press A!");
+				//Serial.println("Press A!");
 			}
 			else if(bSave & ~BUTTON_B)
 			{
-				Serial.println("Press B!");
+				//Serial.println("Press B!");
 			}
 		}
 		bCount = 0;
@@ -289,40 +302,75 @@ bool TimeElapsed(unsigned long ref, unsigned long wait)
 		return false;
 }
 
-/*
-Get time from serial connection
-Time data is just the letter 't' followed by 4 bytes 
-representing a unix epoch 32-bit time stamp. 
-The time is assumed to already be adjusted for local 
-time zone and DST by the sending computer as RTC does not 
-store time as UTC.
-*/
-/*
-bool getPCTimeSync()
+void CheckEEPROM()
 {
-bool result = false;
-if(Serial.available() >= SYNC_LEN)
-{
-byte buf[5];
-memset(buf, 0, 5);
-Serial.readBytes((char *)buf, 5);
-if(buf[0] == SYNC_HEADER)
-{
-uint32_t t = 0;
-memcpy(&t, buf+1, 4);
-RTC->adjust(DateTime(t));
-Serial.write(42); //Writes out to confirm we got it (sends as a *)
-Serial.flush();
-result = true;
-while(Serial.available()) Serial.read(); //clear the bufer
-Serial.end();
-setResetDisable(false);
+	_imageSize = EEPROM.read(0);
+	_useEEPROM = _imageSize > 0;
+	if(_useEEPROM)
+	{
+		_delay = EEPROM.read(1);
+	}
+	else
+	{
+		_delay = frameDelay;
+		_imageSize = imageSize;
+	}
 }
+//get data from Serial connection
+bool getImageData()
+{
+	static uint32_t val = 0;
+	bool result = false;
+	if(Serial.available() >= SYNC_HEADER_LEN)
+	{
+		uint32_t buf[SYNC_MAX_COLS];
+		memset(buf, 0, SYNC_MAX_COLS*sizeof(uint32_t));
+
+		char header = (char)Serial.read();
+		byte dataLen = Serial.read();
+		byte delay = Serial.read();
+
+		if(header == SYNC_HEADER)
+		{
+			byte c = 0;
+			while(Serial.available() && c < dataLen) 
+			{
+				val = 0;
+				val += Serial.read() << 24;
+				val += Serial.read() << 16;
+				val += Serial.read() << 8;
+				val += Serial.read();
+
+				//Serial.readBytes((char *)val, 4);
+				buf[c++] = val;
+			}
+			while(Serial.available()) Serial.read(); //clear the buffer
+
+			Serial.write(42); //Writes out to confirm we got it (sends as a *)
+			Serial.flush();
+
+			result = true;
+
+			//disable serial
+			Serial.end();
+			setResetDisable(false);
+
+			EEPROM.write(0, dataLen);
+			EEPROM.write(1, delay);		
+
+			for(int i=DATA_EEPROM_START; i<DATA_EEPROM_START+SYNC_MAX_COLS; i++)
+			{
+				EEPROM_writeAnything(i, buf[i-DATA_EEPROM_START]);
+			}
+
+			CheckEEPROM();
+		}
+
+	}
+
+	return result;
 }
 
-return result;
-}
-*/
 
 /*
 The main program state machine.
@@ -343,12 +391,18 @@ void loop()
 
 			if(povStep % 2)
 			{
-				povB = pgm_read_dword(&imageData[povStep]);
+				if(_useEEPROM)
+					EEPROM_readAnything(povStep * 4, povB);
+				else
+					povB = pgm_read_dword(&imageData[povStep]);
 				povData = &povB;
 			}
 			else
 			{
-				povA = pgm_read_dword(&imageData[povStep]);
+				if(_useEEPROM)
+					EEPROM_readAnything(povStep * 4, povA);
+				else
+					povA = pgm_read_dword(&imageData[povStep]);
 				povData = &povA;
 			}
 		}
@@ -365,16 +419,15 @@ void loop()
 		{
 			if(TimeElapsed(timeRef, 40))
 			{
-				Serial.println("Serial!!");
 				timeRef = millis();
 				if(_serialScan == 31) _serialScanDir = false;
 				else if(_serialScan == 0) _serialScanDir = true;
 				_serialScan += (_serialScanDir ? 1 : -1);
 			}
 
-			//check for serial data for time sync
-			//if(getPCTimeSync())
-			//	curState = STATE_NONE;
+			//check for serial data for image
+			if(getImageData())
+				curState = STATE_NONE;
 		}
 	}
 }

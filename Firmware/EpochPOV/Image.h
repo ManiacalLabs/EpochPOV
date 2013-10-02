@@ -65,4 +65,4 @@ PROGMEM uint32_t imageData[] = {
 	0x00000000,
 };
 const uint8_t imageSize = 64;
-const uint8_t frameDelay = 10;
+const uint8_t frameDelay = 2;
