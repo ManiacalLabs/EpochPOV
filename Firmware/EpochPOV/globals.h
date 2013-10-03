@@ -76,6 +76,10 @@ const uint8_t scanLevels[] = {10,3,1};
 #define OD(x) Serial.print(x, DEC)
 #define OS(x) Serial.print(x)
 
+uint32_t _eepromBuf[SYNC_MAX_COLS];
+
+bool _newData = false;
+
 template <class T> int EEPROM_writeAnything(int ee, const T& value)
 {
     const byte* p = (const byte*)(const void*)&value;

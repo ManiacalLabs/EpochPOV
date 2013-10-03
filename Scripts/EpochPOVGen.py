@@ -234,15 +234,16 @@ if _upload:
 		cols = []
 		data = ""
 	else:
-		data = struct.pack("%sI" % len(cols), *cols)
-		#print cols
+		#struct.pack("!%sI" % len(cols), *cols)
+		data = struct.pack("!%sI" % len(cols), *cols)
+		print cols
 		#print data
 	try:
 		print "Sending image data..."
 		b = com.write(bytes("d" + chr(_delay) + chr(len(cols)) + data))
 		print "write bytes: " + str(b)
 		res = com.read()
-		print "result: " + res
+		print "result: " + str(ord(res))
 		if(b > 0 and res == '*'):
 			print "Success sending data!"
 		else:

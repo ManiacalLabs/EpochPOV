@@ -16,6 +16,7 @@ PIND5: Reset Enable/Disable
 
 #include <Wire.h>
 #include "EEPROM.h"
+#include <avr/eeprom.h>
 #include "globals.h"
 #include "Image.h"
 
@@ -55,7 +56,16 @@ void setup()
 
 	CheckEEPROM();
 
-	//Serial.begin(SERIAL_BAUD);
+	/*Serial.begin(SERIAL_BAUD);
+
+	for(int i=0; i<SYNC_MAX_COLS*sizeof(uint32_t); i++)
+	{
+		Serial.print(_eepromBuf[i], DEC);
+		Serial.print(" ");
+	}
+
+	Serial.println();
+	Serial.end();*/
 }
 
 /*
@@ -309,6 +319,9 @@ void CheckEEPROM()
 	if(_useEEPROM)
 	{
 		_delay = EEPROM.read(1);
+		memset(_eepromBuf, 0, SYNC_MAX_COLS*sizeof(uint32_t));
+		//EEPROM_readAnything(DATA_EEPROM_START, _eepromBuf);
+		eeprom_read_block((void*)_eepromBuf, (void*)DATA_EEPROM_START, SYNC_MAX_COLS*sizeof(uint32_t));
 	}
 	else
 	{
@@ -319,11 +332,11 @@ void CheckEEPROM()
 //get data from Serial connection
 bool getImageData()
 {
-	static uint32_t val = 0;
 	bool result = false;
+	_newData = false;
 	if(Serial.available() >= SYNC_HEADER_LEN)
 	{
-		uint32_t buf[SYNC_MAX_COLS];
+		uint8_t buf[SYNC_MAX_COLS*sizeof(uint32_t)];
 		memset(buf, 0, SYNC_MAX_COLS*sizeof(uint32_t));
 
 		char header = (char)Serial.read();
@@ -333,37 +346,37 @@ bool getImageData()
 		if(header == SYNC_HEADER)
 		{
 			byte c = 0;
-			while(Serial.available() && c < dataLen) 
+			while(Serial.available() && c < dataLen*sizeof(uint32_t)) 
 			{
-				val = 0;
-				val += Serial.read() << 24;
-				val += Serial.read() << 16;
-				val += Serial.read() << 8;
-				val += Serial.read();
-
-				//Serial.readBytes((char *)val, 4);
-				buf[c++] = val;
+				buf[c++] = Serial.read();
 			}
 			while(Serial.available()) Serial.read(); //clear the buffer
-
 			Serial.write(42); //Writes out to confirm we got it (sends as a *)
 			Serial.flush();
-
 			result = true;
+			//cli();
+
+			//uint32_t dataBuf[SYNC_MAX_COLS];
+			//memcpy(dataBuf, buf, SYNC_MAX_COLS*sizeof(uint32_t));
+			/*for(int i=DATA_EEPROM_START; i<DATA_EEPROM_START+(SYNC_MAX_COLS*sizeof(uint32_t)); i+=sizeof(uint32_t))
+			{
+				EEPROM_writeAnything(i, dataBuf[i-DATA_EEPROM_START]);
+			}*/
+			//EEPROM_writeAnything(DATA_EEPROM_START, dataBuf);
+			eeprom_write_block((const void*)buf, (void*)DATA_EEPROM_START, SYNC_MAX_COLS*sizeof(uint32_t));
+
+			EEPROM.write(0, dataLen);
+			EEPROM.write(1, delay);	
+
+			//sei();
+
+			
 
 			//disable serial
 			Serial.end();
 			setResetDisable(false);
 
-			EEPROM.write(0, dataLen);
-			EEPROM.write(1, delay);		
-
-			for(int i=DATA_EEPROM_START; i<DATA_EEPROM_START+SYNC_MAX_COLS; i++)
-			{
-				EEPROM_writeAnything(i, buf[i-DATA_EEPROM_START]);
-			}
-
-			CheckEEPROM();
+			//eeprom_write_block((const void*)dataBuf, (void*)DATA_EEPROM_START, SYNC_MAX_COLS*sizeof(uint32_t));
 		}
 
 	}
@@ -381,6 +394,12 @@ void loop()
 {
 	if(curState == STATE_NONE)
 	{
+		if(_newData)
+		{
+			CheckEEPROM();
+			_newData = false;
+		}
+
 		if(TimeElapsed(timeRef, frameDelay))
 		{
 			timeRef = millis();
@@ -392,7 +411,7 @@ void loop()
 			if(povStep % 2)
 			{
 				if(_useEEPROM)
-					EEPROM_readAnything(povStep * 4, povB);
+					povB = _eepromBuf[povStep];
 				else
 					povB = pgm_read_dword(&imageData[povStep]);
 				povData = &povB;
@@ -400,7 +419,7 @@ void loop()
 			else
 			{
 				if(_useEEPROM)
-					EEPROM_readAnything(povStep * 4, povA);
+					povA = _eepromBuf[povStep];
 				else
 					povA = pgm_read_dword(&imageData[povStep]);
 				povData = &povA;
@@ -427,7 +446,10 @@ void loop()
 
 			//check for serial data for image
 			if(getImageData())
+			{
 				curState = STATE_NONE;
+				_newData = true;
+			}
 		}
 	}
 }
