@@ -14,9 +14,6 @@ PIND2 & PIND3: Mode & Change buttons
 PIND5: Reset Enable/Disable
 */
 
-#include <Wire.h>
-#include "EEPROM.h"
-#include <avr/eeprom.h>
 #include "globals.h"
 #include "Image.h"
 
@@ -51,21 +48,6 @@ void setup()
 	povA = povB = 0;
 	povData = &povA;
 	setInterrupts();
-
-	//EEPROM.write(0, 0);
-
-	CheckEEPROM();
-
-	/*Serial.begin(SERIAL_BAUD);
-
-	for(int i=0; i<SYNC_MAX_COLS*sizeof(uint32_t); i++)
-	{
-		Serial.print(_eepromBuf[i], DEC);
-		Serial.print(" ");
-	}
-
-	Serial.println();
-	Serial.end();*/
 }
 
 /*
@@ -106,6 +88,7 @@ inline void setInterrupts()
 	// enable timer compare interrupt
 	TIMSK1 |= _BV(OCIE1A);
 
+	/* Leaving in just in case 
 	//Setup Timer2 interrupts for button handling
 	//Runs at about 60Hz, which is as slow as we can go
 	TCCR2A = 0;// set entire TCCR1A register to 0
@@ -120,19 +103,14 @@ inline void setInterrupts()
 	TCCR2B |= PRESCALE2_1024;  
 	// enable timer compare interrupt
 	TIMSK2 |= _BV(OCIE2A);
+	*/
 
 	//enable interrupt timers
 	sei();
 }
 
-inline void endSerialMode()
-{
-	Serial.end();
-	setResetDisable(false);
-	curState = STATE_NONE;
-}
-
 //Timer2 interrupt for handling button presses
+/* Leaving in just in case 
 ISR(TIMER2_COMPA_vect)
 {
 
@@ -145,42 +123,25 @@ ISR(TIMER2_COMPA_vect)
 			bCount = 0;
 			if(bSave & ~BUTTON_A)
 			{
-				if(curState == STATE_SERIAL_DATA)
-				{
-					endSerialMode();
-				}
+				
 			}
 			else if(bSave & ~BUTTON_B)
 			{
-				if(curState == STATE_SERIAL_DATA)
-				{
-					endSerialMode();
-				}
+				
 			}
 			else
 			{
-				if(curState == STATE_NONE)
-				{
-					setResetDisable(true);
-					Serial.begin(SERIAL_BAUD);
-					_serialScan = 16; //start in middle
-					_serialScanDir = false;
-					timeOutRef = millis();
-					curState = STATE_SERIAL_DATA;
-				}
-				else if(curState == STATE_SERIAL_DATA)
-				{
-					endSerialMode();
-				}
+				
 			}
 		} 
 		else bCount++; // else keep counting...
 	} 
 
 }
+*/
 
 //Button external interrupts
-//Not really using these for EpochPOV, just here in case we need them later.
+/* Leaving in just in case 
 ISR(INT0_vect) {
 
 	uint8_t state = BUTTON_STATE;
@@ -195,11 +156,11 @@ ISR(INT0_vect) {
 		{
 			if(bSave & ~BUTTON_A)
 			{
-				//Serial.println("Press A!");
+				
 			}
 			else if(bSave & ~BUTTON_B)
 			{
-				//Serial.println("Press B!");
+				
 			}
 		}
 		bCount = 0;
@@ -211,9 +172,10 @@ ISR(INT0_vect) {
 	bSave = state;
 
 }
+*/
 
 //Use the same handler for both INT0 and INT1 interrupts
-ISR(INT1_vect, ISR_ALIASOF(INT0_vect));
+//ISR(INT1_vect, ISR_ALIASOF(INT0_vect));
 
 /*
 Where the magic happens. All the multiplexing is done here.
@@ -234,37 +196,6 @@ ISR(TIMER1_COMPA_vect)
 	PORTB |= (_BV(PINB0) | _BV(PINB1) | _BV(PINB2) | _BV(PINB3) | _BV(PINB4) | _BV(PINB5));
 	PORTD |= (_BV(PIND6) | _BV(PIND7));
 
-
-	if(curState == STATE_SERIAL_DATA)
-	{
-		scan_low = _serialScan >= SCAN_WIDTH ? _serialScan - SCAN_WIDTH : 0;
-		scan_high = _serialScan <= (31 - SCAN_WIDTH) ? _serialScan + SCAN_WIDTH : 31;
-		byte _scanOffset = 0;
-		byte _curStep = 0; 
-
-		//set the 4 rows
-		for(row=0; row<4; row++)
-		{
-			_curStep = (row + (col * 4));
-
-			if(_curStep < _serialScan) _scanOffset = (_serialScan - _curStep);
-			else if(_curStep > _serialScan) _scanOffset = (_curStep - _serialScan);
-			else _scanOffset = 0;
-
-			if((_curStep >= scan_low && _curStep <= scan_high) &&
-				(_serialScanStep < scanLevels[_scanOffset]))
-				PORTC |= _BV(row);
-			else
-				PORTC &= ~_BV(row);
-		}
-
-		//Enable the current column
-		if(col < 6)
-			PORTB &= ~_BV(col);
-		else
-			PORTD &= ~_BV(col);
-	}
-	else
 	{
 		{
 			//set the 4 rows
@@ -288,13 +219,6 @@ ISR(TIMER1_COMPA_vect)
 	if(col == 8)
 	{ 
 		col = 0;
-
-		if(curState == STATE_SERIAL_DATA)
-		{
-			_serialScanStep++;
-			if(_serialScanStep == 10) _serialScanStep = 0; 
-		}
-
 	}
 }
 
@@ -312,178 +236,25 @@ bool TimeElapsed(unsigned long ref, unsigned long wait)
 		return false;
 }
 
-void CheckEEPROM()
-{
-	_imageSize = EEPROM.read(0);
-	_useEEPROM = _imageSize > 0;
-	if(_useEEPROM)
-	{
-		_delay = EEPROM.read(1);
-		memset(_eepromBuf, 0, SYNC_MAX_COLS*sizeof(uint32_t));
-		//EEPROM_readAnything(DATA_EEPROM_START, _eepromBuf);
-		eeprom_read_block((void*)_eepromBuf, (void*)DATA_EEPROM_START, SYNC_MAX_COLS*sizeof(uint32_t));
-	}
-	else
-	{
-		_delay = frameDelay;
-		_imageSize = imageSize;
-	}
-}
-//get data from Serial connection
-bool getImageData()
-{
-	bool result = false;
-	_newData = false;
-	if(Serial.available() >= SYNC_HEADER_LEN)
-	{
-		uint8_t buf[SYNC_MAX_COLS*sizeof(uint32_t)];
-		memset(buf, 0, SYNC_MAX_COLS*sizeof(uint32_t));
-
-		char header = (char)Serial.read();
-		byte dataLen = Serial.read();
-		byte delay = Serial.read();
-
-		if(header == SYNC_HEADER)
-		{
-			byte c = 0;
-			while(Serial.available() && c < dataLen*sizeof(uint32_t)) 
-			{
-				buf[c++] = Serial.read();
-			}
-			while(Serial.available()) Serial.read(); //clear the buffer
-			Serial.write(42); //Writes out to confirm we got it (sends as a *)
-			Serial.flush();
-			result = true;
-			//cli();
-
-			//uint32_t dataBuf[SYNC_MAX_COLS];
-			//memcpy(dataBuf, buf, SYNC_MAX_COLS*sizeof(uint32_t));
-			/*for(int i=DATA_EEPROM_START; i<DATA_EEPROM_START+(SYNC_MAX_COLS*sizeof(uint32_t)); i+=sizeof(uint32_t))
-			{
-				EEPROM_writeAnything(i, dataBuf[i-DATA_EEPROM_START]);
-			}*/
-			//EEPROM_writeAnything(DATA_EEPROM_START, dataBuf);
-			eeprom_write_block((const void*)buf, (void*)DATA_EEPROM_START, SYNC_MAX_COLS*sizeof(uint32_t));
-
-			EEPROM.write(0, dataLen);
-			EEPROM.write(1, delay);	
-
-			//sei();
-
-			
-
-			//disable serial
-			Serial.end();
-			setResetDisable(false);
-
-			//eeprom_write_block((const void*)dataBuf, (void*)DATA_EEPROM_START, SYNC_MAX_COLS*sizeof(uint32_t));
-		}
-
-	}
-
-	return result;
-}
-
-
-/*
-The main program state machine.
-Most of the time this will just be updating the time every 500ms
-(1000ms can cause noticable jumps if program execution takes longer than normal).
-*/
 void loop()
 {
-	if(curState == STATE_NONE)
+	if(TimeElapsed(timeRef, frameDelay))
 	{
-		if(_newData)
-		{
-			CheckEEPROM();
-			_newData = false;
-		}
+		timeRef = millis();
 
-		if(TimeElapsed(timeRef, frameDelay))
-		{
-			timeRef = millis();
+		povStep++;
+		if(povStep >= imageSize)
+			povStep = 0;
 
-			povStep++;
-			if(povStep >= imageSize)
-				povStep = 0;
-
-			if(povStep % 2)
-			{
-				if(_useEEPROM)
-					povB = _eepromBuf[povStep];
-				else
-					povB = pgm_read_dword(&imageData[povStep]);
-				povData = &povB;
-			}
-			else
-			{
-				if(_useEEPROM)
-					povA = _eepromBuf[povStep];
-				else
-					povA = pgm_read_dword(&imageData[povStep]);
-				povData = &povA;
-			}
-		}
-	}
-	else if(curState == STATE_SERIAL_DATA)
-	{
-		if(TimeElapsed(timeOutRef, 30000))
+		if(povStep % 2)
 		{
-			Serial.end();
-			setResetDisable(false);
-			curState = STATE_NONE;
+			povB = pgm_read_dword(&imageData[povStep]);
+			povData = &povB;
 		}
 		else
 		{
-			if(TimeElapsed(timeRef, 40))
-			{
-				timeRef = millis();
-				if(_serialScan == 31) _serialScanDir = false;
-				else if(_serialScan == 0) _serialScanDir = true;
-				_serialScan += (_serialScanDir ? 1 : -1);
-			}
-
-			//check for serial data for image
-			if(getImageData())
-			{
-				curState = STATE_NONE;
-				_newData = true;
-			}
+			povA = pgm_read_dword(&imageData[povStep]);
+			povData = &povA;
 		}
 	}
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

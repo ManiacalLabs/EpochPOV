@@ -18,11 +18,8 @@ uint16_t holdMax = 60;
 uint8_t _delay = 1;
 uint8_t _imageSize = 0;
 
-bool _useEEPROM = false;
-
 //Valid state machine states
 #define STATE_NONE        0
-#define STATE_SERIAL_DATA 1
 
 volatile uint8_t curState = STATE_NONE;
 
@@ -56,18 +53,6 @@ volatile uint8_t curState = STATE_NONE;
 #define PRESCALE2_256 (_BV(CS22) | _BV(CS21))
 #define PRESCALE2_1024 (_BV(CS22) | _BV(CS21) | _BV(CS20))
 
-//Used for the larson scanner effect during Serial Set mode.
-volatile byte _serialScan = 0;
-volatile byte _serialScanStep = 0;
-bool _serialScanDir = false;
-const uint8_t scanLevels[] = {10,3,1}; 
-
-//For getting the time over serial connection
-#define SYNC_HEADER_LEN 3  // header char + actual length + delay time
-#define SYNC_HEADER 'd'  // header for data 
-#define SYNC_MAX_COLS 128  //max image length
-#define DATA_EEPROM_START 2
-
 //Change this to whatever your computer serial connection is set to
 //TODO: Change this to whatever the arduino drivers default to.
 #define SERIAL_BAUD 115200
@@ -75,27 +60,5 @@ const uint8_t scanLevels[] = {10,3,1};
 //Helpers for Serial printing
 #define OD(x) Serial.print(x, DEC)
 #define OS(x) Serial.print(x)
-
-uint32_t _eepromBuf[SYNC_MAX_COLS];
-
-bool _newData = false;
-
-template <class T> int EEPROM_writeAnything(int ee, const T& value)
-{
-    const byte* p = (const byte*)(const void*)&value;
-    unsigned int i;
-    for (i = 0; i < sizeof(value); i++)
-          EEPROM.write(ee++, *p++);
-    return i;
-}
-
-template <class T> int EEPROM_readAnything(int ee, T& value)
-{
-    byte* p = (byte*)(void*)&value;
-    unsigned int i;
-    for (i = 0; i < sizeof(value); i++)
-          *p++ = EEPROM.read(ee++);
-    return i;
-}
 
 #endif //__GLOBALS__
