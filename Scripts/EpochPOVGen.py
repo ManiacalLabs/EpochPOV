@@ -21,8 +21,6 @@ def genHeader(cols, delay):
     output = ""
     output += "PROGMEM uint32_t imageData[] = {\n"
     for c in cols:
-        print c
-        print "0x%0.8X" % c
         output += "\t0x%0.8X,\n" % c
 
     output += "};\n"
@@ -51,6 +49,7 @@ _clear = False
 parser = argparse.ArgumentParser()
 parser.add_argument("input_img", help="BMP image to process. Must be 32 pixels high.")
 parser.add_argument("output_header", help="File to output C image data to.")
+parser.add_argument("--delay", help="Time (ms) between each column refresh.", type=int)
 parser.add_argument("--flip_v", help="Flip image vertically.", action="store_true")
 parser.add_argument("--flip_h", help="Flip image horizontally.", action="store_true")
 parser.add_argument("--invert", help="Invert image black/white values (negative)", action="store_true")
@@ -59,6 +58,8 @@ args = parser.parse_args()
 
 _filename = args.input_img
 _header = args.output_header
+if args.delay:
+    _delay = args.delay
 _flip_v = args.flip_v
 _flip_h = args.flip_h
 _invert = args.invert
