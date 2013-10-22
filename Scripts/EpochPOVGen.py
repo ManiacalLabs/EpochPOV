@@ -42,7 +42,7 @@ _flip = False
 _upload = False
 _filename = ""
 _header = ""
-_delay = 1
+_delay = 4
 _clear = False
 
 
